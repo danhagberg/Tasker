@@ -1,8 +1,12 @@
 package net.digitaltsunami.tasker.state;
 
 public enum TaskEvents {
-    PAUSED,
-    RUNNING,
-    FINISHED,
-    CANCELED, DELETE
+    PAUSE,
+    RUN,
+    INSIDE_WINDOW,
+    OUTSIDE_WINDOW,
+    FINISH,
+    CANCEL,
+    DELETE,
+    PREPARED
 }

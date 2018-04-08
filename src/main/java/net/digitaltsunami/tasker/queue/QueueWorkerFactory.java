@@ -2,6 +2,7 @@ package net.digitaltsunami.tasker.queue;
 
 
 import net.digitaltsunami.tasker.Rate;
+import net.digitaltsunami.tasker.TaskConfig;
 import net.digitaltsunami.tasker.TaskWorker;
 import net.digitaltsunami.tasker.WorkerConfig;
 import net.digitaltsunami.tasker.state.TaskFlow;
@@ -18,8 +19,8 @@ public class QueueWorkerFactory {
         this.template = template;
     }
 
-    public QueueWorker getQueueWorker(String jobId, Rate rate, WorkerConfig workerConfig, TaskWorker taskWorker, TaskFlow taskFlow) {
+    public QueueWorker getQueueWorker(String jobId, TaskConfig taskConfig, TaskWorker taskWorker, TaskFlow taskFlow) {
         TaskQueue taskQueue = new TaskQueue(template, jobId);
-        return new QueueWorker(jobId, taskQueue, rate, workerConfig, taskWorker, taskFlow);
+        return new QueueWorker(jobId, taskQueue, taskConfig, taskWorker, taskFlow);
     }
 }

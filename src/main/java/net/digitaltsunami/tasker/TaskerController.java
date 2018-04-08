@@ -19,4 +19,8 @@ public class TaskerController {
     public void updateStatus(@PathVariable String jobId, @PathVariable JobStatus status) throws ResourceNotFoundException {
         taskService.updateStatus(jobId, status);
     }
+    @DeleteMapping("/api/{jobId}")
+    public void deleteTask(@PathVariable String jobId) throws ResourceNotFoundException {
+        taskService.delete(jobId);
+    }
 }

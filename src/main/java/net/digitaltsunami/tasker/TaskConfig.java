@@ -4,6 +4,7 @@ public class TaskConfig {
     private String fileLocation;
     private String jobId;
     private Rate rate;
+    private WorkerConfig workerConfig;
 
     public String getFileLocation() {
         return fileLocation;
@@ -29,6 +30,15 @@ public class TaskConfig {
 
     public TaskConfig setRate(Rate rate) {
         this.rate = rate;
+        return this;
+    }
+
+    public WorkerConfig getWorkerConfig() {
+        return workerConfig;
+    }
+
+    public TaskConfig setWorkerConfig(WorkerConfig workerConfig) {
+        this.workerConfig = workerConfig;
         return this;
     }
 }

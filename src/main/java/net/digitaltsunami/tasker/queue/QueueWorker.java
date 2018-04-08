@@ -1,13 +1,17 @@
 package net.digitaltsunami.tasker.queue;
 
-import net.digitaltsunami.tasker.Rate;
+import net.digitaltsunami.tasker.TaskConfig;
 import net.digitaltsunami.tasker.TaskWorker;
-import net.digitaltsunami.tasker.WorkerConfig;
 import net.digitaltsunami.tasker.state.TaskFlow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.*;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class QueueWorker {
     private final static Logger logger = LoggerFactory.getLogger(QueueWorker.class);
@@ -16,18 +20,16 @@ public class QueueWorker {
     private final TaskWorker worker;
     private final TaskFlow taskFlow;
     private final String jobId;
-    private Rate rate;
-    private WorkerConfig workerConfig;
+    private final TaskConfig taskConfig;
     private ScheduledExecutorService scheduler;
     private boolean jobComplete;
 
-    public QueueWorker(String jobId, TaskQueue queue, Rate rate, WorkerConfig workerConfig,
+    public QueueWorker(String jobId, TaskQueue queue, TaskConfig taskConfig,
                        TaskWorker taskWorker, TaskFlow taskFlow) {
         this.jobId = jobId;
         this.queue = queue;
         this.worker = taskWorker;
-        this.rate = rate;
-        this.workerConfig = workerConfig;
+        this.taskConfig = taskConfig;
         this.taskFlow = taskFlow;
 
     }
@@ -58,26 +60,55 @@ public class QueueWorker {
 
     public void resume() {
         if (!jobComplete && scheduler == null) {
-            scheduler = Executors.newScheduledThreadPool(workerConfig.getNumberOfWorkers());
+            scheduler = Executors.newScheduledThreadPool(taskConfig.getWorkerConfig().getNumberOfWorkers());
             scheduler.scheduleAtFixedRate(() -> this.processQueueEntry(),
-                    5, rate.getPeriod(), rate.getPeriodUnit());
+                    5, taskConfig.getRate().getPeriod(), taskConfig.getRate().getPeriodUnit());
         }
     }
 
     public void pauseJob() {
-        scheduler.shutdown();
-        scheduler = null;
+        if (scheduler != null) {
+            scheduler.shutdown();
+            scheduler = null;
+        }
     }
 
     public void complete() {
         jobComplete = true;
-        logger.info("Job complete.");
-        scheduler.shutdown();
+        shutdownWorker();
+        queue.deleteQueue();
+        logger.info("Job Completed.");
     }
+
     public void cancel() {
         jobComplete = true;
-        logger.info("Job complete.");
-        scheduler.shutdown();
-        // Delete queue
+        shutdownWorker();
+        queue.deleteQueue();
+        logger.info("Job Canceled.");
+    }
+
+    protected void shutdownWorker() {
+        if (scheduler != null) {
+            scheduler.shutdown();
+        }
+    }
+
+    public void prepareJob() {
+        queueTaskWork();
+    }
+
+    protected void queueTaskWork() {
+        try {
+            AtomicInteger count = new AtomicInteger(0);
+            Files.lines(Paths.get(taskConfig.getFileLocation()))
+                    .filter(line -> !line.isEmpty())
+                    .forEach(line -> {
+                        queue.submitTask(line);
+                        count.incrementAndGet();
+                    });
+            logger.info("Added {} items to queue for job ID: {}", count.get(), jobId);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
