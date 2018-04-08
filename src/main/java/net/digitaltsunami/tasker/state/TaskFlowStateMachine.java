@@ -19,28 +19,19 @@ public class TaskFlowStateMachine implements TaskFlow {
     @Override
     public void pause(String jobId) {
         Task task = taskRepo.get(jobId);
-        task.getStateMachine()
-                .sendEvent(MessageBuilder.withPayload(TaskEvents.PAUSED)
-                        .setHeader("JOB_ID", jobId)
-                        .build());
+        task.getStateMachine().sendEvent(TaskEvents.PAUSE);
     }
 
     @Override
     public void run(String jobId) {
         Task task = taskRepo.get(jobId);
-        task.getStateMachine()
-                .sendEvent(MessageBuilder.withPayload(TaskEvents.RUNNING)
-                        .setHeader("JOB_ID", jobId)
-                        .build());
+        task.getStateMachine().sendEvent(TaskEvents.RUN);
     }
 
     @Override
     public void cancel(String jobId) {
         Task task = taskRepo.get(jobId);
-        boolean accepted = task.getStateMachine()
-                .sendEvent(MessageBuilder.withPayload(TaskEvents.CANCELED)
-                        .setHeader("JOB_ID", jobId)
-                        .build());
+        boolean accepted = task.getStateMachine().sendEvent(TaskEvents.CANCEL);
         if (!accepted) {
             logger.error("Transition to Canceled state failed. Current State: {}",
                     task.getStateMachine().getState().getId());
@@ -50,7 +41,15 @@ public class TaskFlowStateMachine implements TaskFlow {
 
     @Override
     public void delete(String jobId) {
-        logger.error("TaskFlow.delete not implemented.");
+        Task task = taskRepo.get(jobId);
+        boolean accepted = task.getStateMachine().sendEvent(TaskEvents.DELETE);
+        if (accepted) {
+            taskRepo.delete(jobId);
+        }
+        else {
+            logger.error("Transition to Deleted state failed. Current State: {}",
+                    task.getStateMachine().getState().getId());
+        }
 
     }
 
@@ -58,7 +57,7 @@ public class TaskFlowStateMachine implements TaskFlow {
     public void complete(String jobId) {
         Task task = taskRepo.get(jobId);
         task.getStateMachine()
-                .sendEvent(MessageBuilder.withPayload(TaskEvents.FINISHED)
+                .sendEvent(MessageBuilder.withPayload(TaskEvents.FINISH)
                         .setHeader("JOB_ID", jobId)
                         .build());
 

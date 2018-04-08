@@ -9,7 +9,7 @@ public class RandomTaskWorker implements TaskWorker {
     Random random = new Random();
     @Override
     public boolean processTask(String work) {
-        if (random.nextInt(10) % 3 == 0)  {
+        if (random.nextInt(10) % 6 == 0)  {
             return false; // simulate error
         }
         return true;

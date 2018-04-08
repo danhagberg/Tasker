@@ -15,4 +15,8 @@ public class TaskRepo {
     public Task get(String taskId) {
         return taskMap.get(taskId);
     }
+
+    public void delete(String jobId) {
+        taskMap.remove(jobId);
+    }
 }

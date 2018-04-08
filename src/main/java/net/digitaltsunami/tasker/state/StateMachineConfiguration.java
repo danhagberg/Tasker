@@ -18,9 +18,9 @@ import org.springframework.statemachine.listener.StateMachineListenerAdapter;
 import org.springframework.statemachine.state.State;
 
 import java.time.Instant;
+import java.util.Map;
 
-import static net.digitaltsunami.tasker.state.TaskEvents.CANCELED;
-import static net.digitaltsunami.tasker.state.TaskEvents.FINISHED;
+import static net.digitaltsunami.tasker.state.TaskEvents.*;
 import static net.digitaltsunami.tasker.state.TaskStates.*;
 
 @Configuration
@@ -46,13 +46,20 @@ public class StateMachineConfiguration
     public void configure(StateMachineStateConfigurer<TaskStates, TaskEvents> states) throws Exception {
         states.withStates()
                 .initial(PAUSED)
+                .state(PAUSED)
+                .state(PREPARING, prepare())
                 .state(RUNNABLE)
                 .state(COMPLETE)
                 .state(ERROR)
-                .choice(TIME_WINDOW_CHECK)
-                .state(DELETED)
-                .state(RUNNING)
-                .state(SCHEDULED);
+                .choice(PREPARED_CHECK)
+                .end(DELETED)
+                .and()
+                .withStates()
+                    .parent(RUNNABLE)
+                    .initial(WHAT_NEXT)
+                    .choice(TIME_WINDOW_CHECK)
+                    .state(RUNNING, running())
+                    .state(SCHEDULED, scheduled());
     }
 
     @Override
@@ -60,55 +67,108 @@ public class StateMachineConfiguration
         transitions
                 .withExternal()
                     .source(PAUSED)
-                    .target(RUNNABLE)
-                    .event(TaskEvents.RUNNING)
+                    .event(RUN)
+                    .target(PREPARED_CHECK)
+                    .and()
+                .withLocal()
+                    .source(SCHEDULED)
+                    .event(INSIDE_WINDOW)
+                    .target(RUNNING)
+                    .and()
+                .withLocal()
+                    .source(RUNNING)
+                    .event(OUTSIDE_WINDOW)
+                    .target(SCHEDULED)
+                    .and()
+                .withLocal()
+                    .source(WHAT_NEXT)
+                    .target(TIME_WINDOW_CHECK)
                     .and()
                 .withExternal()
                     .source(RUNNABLE)
+                    .event(PAUSE)
                     .target(PAUSED)
-                    .event(TaskEvents.PAUSED)
                     .action(paused())
                     .and()
+                .withChoice()
+                    .source(PREPARED_CHECK)
+                    .first(RUNNABLE, taskPrepared())
+                    .last(PREPARING)
+                    .and()
                 .withExternal()
-                    .source(RUNNABLE)
-                    .target(TIME_WINDOW_CHECK)
+                    .source(PREPARING)
+                    .event(PREPARED)
+                    .target(RUNNABLE)
                     .and()
                 .withChoice()
                     .source(TIME_WINDOW_CHECK)
-                    .first(RUNNING, withinTimeWindow(), running())
-                    .last(SCHEDULED, scheduled())
+                    .first(RUNNING, withinTimeWindow())
+                    .last(SCHEDULED)
                     .and()
-//                .withInternal()
-//                    .source(RUNNING)
-//                    .action(ctx -> logger.info("Timer action on RUNNABLE"))
-//                    .timer(1000)
-//                    .state(TIME_WINDOW_CHECK)
-//                    .and()
-                .withExternal()
+                .withInternal()
                     .source(RUNNABLE)
+                    .action(checkTimeWindow())
+                    .timer(1000)
+                    .and()
+                .withExternal()
+                    .source(PAUSED)
+                    .event(CANCEL)
                     .target(COMPLETE)
-                    .event(CANCELED)
                     .action(cancel())
                     .and()
                 .withExternal()
                     .source(RUNNABLE)
+                    .event(CANCEL)
                     .target(COMPLETE)
-                    .event(FINISHED)
-                    .action(complete());
+                    .action(cancel())
+                    .and()
+                .withExternal()
+                    .source(RUNNABLE)
+                    .event(FINISH)
+                    .target(COMPLETE)
+                    .action(complete())
+                    .and()
+                .withExternal()
+                    .source(COMPLETE)
+                    .event(DELETE)
+                    .target(DELETED);
+    }
+
+    private Guard<TaskStates,TaskEvents> taskPrepared() {
+        return context -> {
+            String jobId = (String) context.getExtendedState().getVariables().get(Task.TASK_ID_KEY);
+            Task task = taskRepo.get(jobId);
+            return task.isPrepared();
+        };
+    }
+
+    private Action<TaskStates,TaskEvents> checkTimeWindow() {
+        return context -> {
+            Map<Object, Object> variables = context.getExtendedState().getVariables();
+
+            boolean inWindow =  Instant.now().getEpochSecond() % 2 == 0;
+            logger.error("IN TIME WINDOW: {}", inWindow);
+            if (inWindow) {
+                context.getStateMachine().sendEvent(INSIDE_WINDOW);
+            }
+            else {
+                context.getStateMachine().sendEvent(OUTSIDE_WINDOW);
+            }
+        };
     }
 
     private Guard<TaskStates,TaskEvents> withinTimeWindow() {
         return context -> {
             boolean inWindow =  Instant.now().getEpochSecond() % 5 == 0;
             logger.error("IN TIME WINDOW: {}", inWindow);
-            return true;
+            return inWindow;
         };
     }
 
     @Bean
     public Action<TaskStates,TaskEvents> complete() {
         return context -> {
-            String jobId = (String) context.getMessageHeader("JOB_ID");
+            String jobId = (String) context.getExtendedState().getVariables().get(Task.TASK_ID_KEY);
             Task task = taskRepo.get(jobId);
             task.getWorker().complete();
         };
@@ -117,15 +177,26 @@ public class StateMachineConfiguration
     @Bean
     public Action<TaskStates, TaskEvents> running() {
         return context -> {
-            String jobId = (String) context.getMessageHeader("JOB_ID");
+            String jobId = (String) context.getExtendedState().getVariables().get(Task.TASK_ID_KEY);
             Task task = taskRepo.get(jobId);
             task.getWorker().resume();
+        };
+    }
+
+    @Bean
+    public Action<TaskStates, TaskEvents> prepare() {
+        return context -> {
+            String jobId = (String) context.getExtendedState().getVariables().get(Task.TASK_ID_KEY);
+            Task task = taskRepo.get(jobId);
+            task.getWorker().prepareJob();
+            task.setPrepared(true);
+            context.getStateMachine().sendEvent(PREPARED);
         };
     }
     @Bean
     public Action<TaskStates, TaskEvents> scheduled() {
         return context -> {
-            String jobId = (String) context.getMessageHeader("JOB_ID");
+            String jobId = (String) context.getExtendedState().getVariables().get(Task.TASK_ID_KEY);
             Task task = taskRepo.get(jobId);
             task.getWorker().pauseJob();
         };
@@ -134,7 +205,7 @@ public class StateMachineConfiguration
     @Bean
     public Action<TaskStates, TaskEvents> paused() {
         return context -> {
-            String jobId = (String) context.getMessageHeader("JOB_ID");
+            String jobId = (String) context.getExtendedState().getVariables().get(Task.TASK_ID_KEY);
             Task task = taskRepo.get(jobId);
             task.getWorker().pauseJob();
         };
@@ -142,7 +213,7 @@ public class StateMachineConfiguration
     @Bean
     public Action<TaskStates, TaskEvents> cancel() {
         return context -> {
-            String jobId = (String) context.getMessageHeader("JOB_ID");
+            String jobId = (String) context.getExtendedState().getVariables().get(Task.TASK_ID_KEY);
             Task task = taskRepo.get(jobId);
             task.getWorker().cancel();
         };

@@ -13,11 +13,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.statemachine.config.StateMachineFactory;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.concurrent.atomic.AtomicInteger;
-
 @Service
 public class TaskService {
     private final static Logger logger = LoggerFactory.getLogger(TaskService.class);
@@ -37,29 +32,15 @@ public class TaskService {
     }
 
     public String createTaskWithConfig(TaskConfig taskConfig) {
-        WorkerConfig workerConfig = new WorkerConfig(5);
+        if (taskRepo.get(taskConfig.getJobId()) != null)  {
+            throw new IllegalStateException("Task already exists");
+        }
         QueueWorker worker = workerFactory.getQueueWorker(
-                taskConfig.getJobId(), taskConfig.getRate(), workerConfig, new RandomTaskWorker(), taskFlow);
-        TaskQueue queue = worker.getQueue();
-        queueTaskWork(taskConfig, queue);
-        taskRepo.add(new Task(taskConfig.getJobId(), worker, stateMachineFactory.getStateMachine()));
+                taskConfig.getJobId(), taskConfig, new RandomTaskWorker(), taskFlow);
+        taskRepo.add(new Task(taskConfig.getJobId(), taskConfig, worker, stateMachineFactory.getStateMachine()));
         return taskConfig.getJobId();
     }
 
-    protected void queueTaskWork(TaskConfig taskConfig, TaskQueue queue) {
-        try {
-            AtomicInteger count = new AtomicInteger(0);
-            Files.lines(Paths.get(taskConfig.getFileLocation()))
-                    .filter(line -> !line.isEmpty())
-                    .forEach(line -> {
-                        queue.submitTask(line);
-                        count.incrementAndGet();
-                    });
-            logger.info("Added {} items to queue for job ID: {}", count.get(), taskConfig.getJobId());
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
 
     public void updateStatus(String jobId, JobStatus status) throws ResourceNotFoundException {
         Task task = taskRepo.get(jobId);
@@ -79,5 +60,13 @@ public class TaskService {
             default:
                 logger.error("Invalid status change: {}", status);
         }
+    }
+
+    public void delete(String jobId) throws ResourceNotFoundException {
+        Task task = taskRepo.get(jobId);
+        if (task == null) {
+            throw new ResourceNotFoundException("Failed to find entry for " + jobId);
+        }
+        taskFlow.delete(jobId);
     }
 }

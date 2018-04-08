@@ -12,18 +12,23 @@ public class TaskQueue {
     private final static Logger logger = LoggerFactory.getLogger(TaskQueue.class);
     private final RabbitTemplate rabbitTemplate;
     private final String queueName;
+    private boolean queuePrepared;
 
-    public TaskQueue(RabbitTemplate rabbitTemplate) {
-        this(rabbitTemplate, QueueConfiguration.queueName);
-    }
     public TaskQueue(RabbitTemplate rabbitTemplate, String queueName) {
         this.rabbitTemplate = rabbitTemplate;
         this.queueName = queueName;
-        RabbitAdmin ra = new RabbitAdmin(rabbitTemplate);
-        ra.declareQueue(new Queue(queueName, true, false, true));
+    }
+
+    public void prepareQueue() {
+        if (!queuePrepared) {
+            RabbitAdmin ra = new RabbitAdmin(rabbitTemplate);
+            ra.declareQueue(new Queue(queueName, true, false, true));
+            queuePrepared = true;
+        }
     }
 
     public void submitTask(String task) {
+        prepareQueue();
         TaskQueueEntry entry =
                 new TaskQueueEntry(task)
                         .setAttempts(0)
@@ -39,6 +44,11 @@ public class TaskQueue {
 
     public TaskQueueEntry getTaskEntry() {
         return (TaskQueueEntry) rabbitTemplate.receiveAndConvert(queueName);
+    }
+
+    public void deleteQueue() {
+        RabbitAdmin ra = new RabbitAdmin(rabbitTemplate);
+        ra.deleteQueue(queueName);
     }
 
     public String getQueueName() {
