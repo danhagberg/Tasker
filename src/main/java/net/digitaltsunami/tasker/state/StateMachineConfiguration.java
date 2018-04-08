@@ -129,6 +129,12 @@ public class StateMachineConfiguration
                     .action(complete())
                     .and()
                 .withExternal()
+                    .source(PAUSED)
+                    .event(DELETE)
+                    .target(DELETED)
+                    .action(cancel())
+                    .and()
+                .withExternal()
                     .source(COMPLETE)
                     .event(DELETE)
                     .target(DELETED);
