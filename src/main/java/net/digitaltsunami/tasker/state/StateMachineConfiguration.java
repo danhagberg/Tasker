@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.statemachine.StateContext;
 import org.springframework.statemachine.action.Action;
 import org.springframework.statemachine.config.EnableStateMachineFactory;
 import org.springframework.statemachine.config.EnumStateMachineConfigurerAdapter;
@@ -18,6 +19,8 @@ import org.springframework.statemachine.listener.StateMachineListenerAdapter;
 import org.springframework.statemachine.state.State;
 
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.temporal.TemporalField;
 import java.util.Map;
 
 import static net.digitaltsunami.tasker.state.TaskEvents.*;
@@ -150,11 +153,7 @@ public class StateMachineConfiguration
 
     private Action<TaskStates,TaskEvents> checkTimeWindow() {
         return context -> {
-            Map<Object, Object> variables = context.getExtendedState().getVariables();
-
-            boolean inWindow =  Instant.now().getEpochSecond() % 2 == 0;
-            logger.error("IN TIME WINDOW: {}", inWindow);
-            if (inWindow) {
+            if (isInWindow(context)) {
                 context.getStateMachine().sendEvent(INSIDE_WINDOW);
             }
             else {
@@ -163,11 +162,18 @@ public class StateMachineConfiguration
         };
     }
 
+    private boolean isInWindow(StateContext<TaskStates, TaskEvents> context) {
+        String jobId = (String) context.getExtendedState().getVariables().get(Task.TASK_ID_KEY);
+
+        long secondOfHour =  LocalTime.now().getSecond();
+        boolean inWindow =  secondOfHour > 15;
+        logger.info("{} IN TIME WINDOW: {}", jobId, inWindow);
+        return inWindow;
+    }
+
     private Guard<TaskStates,TaskEvents> withinTimeWindow() {
         return context -> {
-            boolean inWindow =  Instant.now().getEpochSecond() % 5 == 0;
-            logger.error("IN TIME WINDOW: {}", inWindow);
-            return inWindow;
+            return isInWindow(context);
         };
     }
 
