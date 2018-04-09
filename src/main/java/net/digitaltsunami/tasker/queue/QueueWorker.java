@@ -41,9 +41,8 @@ public class QueueWorker {
             taskFlow.complete(jobId);
             return;
         }
-        // System.out.printf("Received: <%s>%n", entry);
         if (worker.processTask(entry.getBody())) {
-            // System.out.printf("Completed: <%s>%n", entry);
+             logger.info("Completed: {}", entry);
         } else {
             if (entry.getAttempts() < 3) {
                 logger.warn("Failed.  Retrying {}", entry);
